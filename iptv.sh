@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-sh_ver="1.86.3"
+sh_ver="1.86.4"
 sh_debug=0
 export LANGUAGE=
 export LC_ALL=
@@ -196,7 +196,7 @@ AptUpdate()
 {
     if [ "${apt_updated:-false}" = false ] 
     then
-        apt-get update >/dev/null
+        apt-get update --allow-releaseinfo-change >/dev/null
         apt_updated=true
     fi
 }
@@ -1855,6 +1855,7 @@ ShFallback()
 
     sh_txt_count=${#sh_txt}
     sh_txt_arr=()
+    local i j k
 
     for((i=0;i<sh_txt_count;i+=3));
     do
@@ -1905,8 +1906,6 @@ ShFallback()
     fi
 
     SH_FALLBACK="$SH_FALLBACK$sh_txt"
-
-    return 0
 }
 
 ShFileCheck()
@@ -44440,22 +44439,37 @@ AptSetSources()
 {
     echo
     apt_sources_options=( '国内' '国外' )
-    inquirer list_input "选择源" apt_sources_options apt_sources
-    if [[ $apt_sources == "国内" ]]
+    inquirer list_input_index "选择源" apt_sources_options apt_sources_options_index
+    if [ "$apt_sources_options_index" -eq 0 ]
     then
         sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
         sed -i 's/ftp.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list
         sed -i 's|security.debian.org|mirrors.ustc.edu.cn/debian-security|g' /etc/apt/sources.list
         if [ -f "/etc/apt/sources.list.d/armbian.list" ]
         then
-            sed -i 's|http[s]*://apt.armbian.com|http://mirrors.nju.edu.cn/armbian|g' /etc/apt/sources.list.d/armbian.list
+            sed -i 's|http[s]*://apt.armbian.com|http://mirrors.ustc.edu.cn/armbian|g' /etc/apt/sources.list.d/armbian.list
+            sed -i 's|http://mirrors.nju.edu.cn/armbian|http://mirrors.ustc.edu.cn/armbian|g' /etc/apt/sources.list.d/armbian.list
+        fi
+        if [ -f "/etc/apt/sources.list.d/docker.list" ] 
+        then
+            curl -fsSL http://mirrors.ustc.edu.cn/docker-ce/linux/debian/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] http://mirrors.ustc.edu.cn/docker-ce/linux/debian \
+            $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
         fi
     else
         sed -i 's/mirrors.ustc.edu.cn/deb.debian.org/g' /etc/apt/sources.list
         sed -i 's|mirrors.ustc.edu.cn/debian-security|security.debian.org|g' /etc/apt/sources.list
         if [ -f "/etc/apt/sources.list.d/armbian.list" ]
         then
-            sed -i 's|http://mirrors.nju.edu.cn/armbian|https://apt.armbian.com|g' /etc/apt/sources.list.d/armbian.list
+            sed -i 's|http://mirrors.nju.edu.cn/armbian|http://apt.armbian.com|g' /etc/apt/sources.list.d/armbian.list
+            sed -i 's|http://mirrors.ustc.edu.cn/armbian|http://apt.armbian.com|g' /etc/apt/sources.list.d/armbian.list
+            sed -i 's/https:/http:/g' /etc/apt/sources.list.d/armbian.list
+        fi
+        if [ -f "/etc/apt/sources.list.d/docker.list" ] 
+        then
+            curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian \
+            $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
         fi
     fi
     Println "$info 源更改成功\n"
@@ -44466,7 +44480,7 @@ VimConfig()
     if [[ ! -x $(command -v vim) ]] 
     then
         Println "$info 安装 vim ..."
-        apt-get update
+        AptUpdate
         apt-get -y install vim
     fi
 
@@ -46428,7 +46442,7 @@ then
         ;;
         2) 
             echo
-            ExitOnList n "`gettext \"适用于 斐讯 n1, apt upgrade 后需要重新修复, 是否继续\"`"
+            ExitOnList n "`gettext \"适用于 斐讯 n1, 是否继续\"`"
 
             if [ ! -d ~/Amlogic_s905-kernel-master ] 
             then
@@ -46458,12 +46472,20 @@ then
             then
                 sed -i '/docker-ce/d' /etc/apt/sources.list
             fi
-            apt-get update
+            AptUpdate
             apt-get -y install ca-certificates
             if [ ! -f "/etc/apt/sources.list.d/docker.list" ] 
             then
-                curl -fsSL http://mirrors.ustc.edu.cn/docker-ce/linux/debian/gpg | apt-key add -
-                echo "deb [arch=arm64] http://mirrors.ustc.edu.cn/docker-ce/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+                if grep -q "mirrors.ustc.edu.cn" < /etc/apt/sources.list
+                then
+                    curl -fsSL http://mirrors.ustc.edu.cn/docker-ce/linux/debian/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian \
+                    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                else
+                    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --batch --yes --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian \
+                    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+                fi
             fi
             apt-get update
             apt-get -y install docker-ce docker-ce-cli containerd.io
@@ -46478,6 +46500,10 @@ then
             then
                 DNSCRYPT_ROOT=$(dirname ~/dnscrypt-*/dnscrypt-proxy | sort | tail -1)
                 dnscrypt_version_old=${DNSCRYPT_ROOT#*-}
+
+                echo
+                inquirer text_input "输入监听端口 : " listen_port $(sed -n -e "s/^listen_addresses = .*:\([0-9]*\)']/\1/p" $DNSCRYPT_ROOT/dnscrypt-proxy.toml)
+
                 if [[ $dnscrypt_version_old == "*" ]]
                 then
                     Println "$tip 请确保已经将本机器用网线连接到主路由器的 LAN 口"
@@ -46488,9 +46514,6 @@ then
 
                     Println "$tip 必须和主路由器 ip 在同一网段"
                     ExitOnText "设置本机静态 ip : " eth0_ip
-
-                    echo
-                    inquirer text_input "输入监听端口 : " listen_port 53
 
                     Println "$info 下载 dnscrypt proxy ..."
                     if curl -L "$FFMPEG_MIRROR_LINK/dnscrypt/dnscrypt-proxy-linux_arm64-$dnscrypt_version.tar.gz" -o ~/dnscrypt-proxy-linux_arm64-$dnscrypt_version.tar.gz_tmp
@@ -46554,7 +46577,7 @@ dns-search=
 method=ignore" > /etc/NetworkManager/system-connections/armbian.nmconnection
 
                         sed -i "0,/.*server_names = \[.*/s//server_names = ['alidns-doh']/" dnscrypt-proxy.toml
-                        sed -i "0,/.*listen_addresses = \['127.0.0.1:53']/s//listen_addresses = ['127.0.0.1:$listen_port', '$eth0_ip:$listen_port', '[::1]:$listen_port']/" dnscrypt-proxy.toml
+                        sed -i "0,/^listen_addresses = .*/s//listen_addresses = ['[::]:$listen_port']/" dnscrypt-proxy.toml
                         sed -i "0,/.*require_dnssec = .*/s//require_dnssec = true/" dnscrypt-proxy.toml
                         sed -i "0,/.*bootstrap_resolvers =.*/s//bootstrap_resolvers = ['114.114.114.114:53', '8.8.8.8:53']/" dnscrypt-proxy.toml
                         sed -i "0,/.*netprobe_address =.*/s//netprobe_address = '114.114.114.114:53'/" dnscrypt-proxy.toml
@@ -46637,9 +46660,8 @@ method=ignore" > /etc/NetworkManager/system-connections/armbian.nmconnection
                         mv linux-arm64 dnscrypt-$dnscrypt_version
                         cd dnscrypt-$dnscrypt_version
                         cp -f example-dnscrypt-proxy.toml dnscrypt-proxy.toml
-                        eth0_ip=$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)
                         sed -i "0,/.*server_names = \[.*/s//server_names = ['alidns-doh']/" dnscrypt-proxy.toml
-                        sed -i "0,/.*listen_addresses = \['127.0.0.1:53']/s//listen_addresses = ['127.0.0.1:$listen_port', '$eth0_ip:$listen_port', '[::1]:$listen_port']/" dnscrypt-proxy.toml
+                        sed -i "0,/^listen_addresses = .*/s//listen_addresses = ['[::]:$listen_port']/" dnscrypt-proxy.toml
                         sed -i "0,/.*require_dnssec = .*/s//require_dnssec = true/" dnscrypt-proxy.toml
                         sed -i "0,/.*bootstrap_resolvers =.*/s//bootstrap_resolvers = ['114.114.114.114:53', '8.8.8.8:53']/" dnscrypt-proxy.toml
                         sed -i "0,/.*netprobe_address =.*/s//netprobe_address = '114.114.114.114:53'/" dnscrypt-proxy.toml
@@ -46679,10 +46701,32 @@ method=ignore" > /etc/NetworkManager/system-connections/armbian.nmconnection
                 exit 1
             fi
 
-            if curl -s -S -L $FFMPEG_MIRROR_LINK/AdGuardHome/master/scripts/install.sh | sh -s -- -v 
+            echo
+            ExitOnText "输入 dnscrypt-proxy 新的监听端口" listen_port
+
+            if [ "$listen_port" -eq 53 ] 
             then
-                Println "$info AdGuard Home 安装成功\n\n设置教程: https://github.com/woniuzfb/iptv/wiki/AdGuardHome\n"
+                Println "$error 端口不能是 53\n"
+                exit 1
             fi
+
+            if ! curl -s -S -L $FFMPEG_MIRROR_LINK/AdGuardHome/master/scripts/install.sh | sh -s -- -v 
+            then
+                Println "$error 安装发生错误\n"
+                exit 1
+            fi
+
+            sed -i "0,/^listen_addresses = .*/s//listen_addresses = ['[::]:$listen_port']/" "$DNSCRYPT_ROOT/dnscrypt-proxy.toml"
+            systemctl restart dnscrypt-proxy
+
+            if ! curl -s -X POST \
+                --data '{"upstream_dns": ["127.0.0.1:'"$listen_port"'"], "ratelimit": 0}' "http://localhost:3000/control/dns_config" 
+            then
+                Println "$error 请登陆 http://localhost:3000/ 手动修改上游 DNS 服务器为 127.0.0.1:$listen_port 并可以将速度限制设置为 0\n"
+                exit 1
+            fi
+
+            Println "$info AdGuard Home 安装成功\n"
         ;;
         6)
             if [[ ! -x $(command -v docker) ]] 
@@ -46910,7 +46954,7 @@ method=ignore" > /etc/NetworkManager/system-connections/hMACvLAN.nmconnection
                 then
                     docker rename openwrt openwrt-$openwrt_ver_old
                     docker container stop openwrt-$openwrt_ver_old >/dev/null 2>&1
-                    Println "$info 网络马上会中断, 请退出并等待 30秒 后重新连接 armbian 后重复当前步骤 ...\n"
+                    Println "$info 网络马上会中断, 请务必退出并等待 30秒 后重新连接 armbian 后重复当前步骤 ...\n"
                     exit 1
                 else
                     docker rename openwrt openwrt-$openwrt_ver_old
@@ -47036,6 +47080,14 @@ config interface 'lan'
             if ! opkg list-installed | grep -q v2ray
             then
                 sed -i 's_http[s]*://downloads.openwrt.org_$FFMPEG_MIRROR_LINK/openwrt_' /etc/opkg/distfeeds.conf
+                if ! grep -q kuoruan < /etc/opkg/customfeeds.conf
+                then
+                    . /etc/openwrt_release
+                    wget -O kuoruan-public.key $FFMPEG_MIRROR_LINK/openwrt-v2ray/packages/public.key
+                    opkg-key add kuoruan-public.key
+                    echo \"src/gz kuoruan_packages $FFMPEG_MIRROR_LINK/openwrt-v2ray/packages/releases/\$DISTRIB_ARCH\" >> /etc/opkg/customfeeds.conf
+                    echo \"src/gz kuoruan_universal $FFMPEG_MIRROR_LINK/openwrt-v2ray/packages/releases/all\" >> /etc/opkg/customfeeds.conf
+                fi
                 opkg update
                 opkg download dnsmasq-full
                 opkg remove dnsmasq
@@ -47047,12 +47099,15 @@ config interface 'lan'
                     echo \"net.core.default_qdisc=fq\" >> /etc/sysctl.d/12-tcp-bbr.conf
                     sysctl -p
                 fi
-                opkg install v2ray-core
-                wget -O luci-app-v2ray_${luci_app_xray_ver}_all.ipk $FFMPEG_MIRROR_LINK/luci-app-v2ray_${luci_app_xray_ver}_all.ipk
-                opkg install luci-app-v2ray_${luci_app_xray_ver}_all.ipk --force-reinstall || true
-                wget -O luci-i18n-v2ray-zh-cn_${luci_app_xray_ver}_all.ipk $FFMPEG_MIRROR_LINK/luci-i18n-v2ray-zh-cn_${luci_app_xray_ver}_all.ipk
-                opkg install luci-i18n-v2ray-zh-cn_${luci_app_xray_ver}_all.ipk --force-reinstall || true
+            else
+                opkg update
             fi
+
+            opkg install v2ray-core
+            wget -O luci-app-v2ray_${luci_app_xray_ver}_all.ipk $FFMPEG_MIRROR_LINK/luci-app-v2ray_${luci_app_xray_ver}_all.ipk
+            opkg install luci-app-v2ray_${luci_app_xray_ver}_all.ipk --force-reinstall || true
+            wget -O luci-i18n-v2ray-zh-cn_${luci_app_xray_ver}_all.ipk $FFMPEG_MIRROR_LINK/luci-i18n-v2ray-zh-cn_${luci_app_xray_ver}_all.ipk
+            opkg install luci-i18n-v2ray-zh-cn_${luci_app_xray_ver}_all.ipk --force-reinstall || true
             "
 
             Println "$info 重启 openwrt ..."
@@ -47130,8 +47185,9 @@ config interface 'lan'
                 docker exec -it openwrt /bin/ash -c "
                 if ! opkg list-installed | grep -q 'xray - $xray_ver-1'
                 then
-                    wget -O xray_${xray_ver}_aarch64_generic.ipk $FFMPEG_MIRROR_LINK/xray_${xray_ver}_aarch64_generic.ipk
-                    opkg install xray_${xray_ver}_aarch64_generic.ipk --force-reinstall || true
+                    . /etc/os-release
+                    wget -O xray_${xray_ver}_\$OPENWRT_ARCH.ipk $FFMPEG_MIRROR_LINK/xray_${xray_ver}_\$OPENWRT_ARCH.ipk
+                    opkg install xray_${xray_ver}_\$OPENWRT_ARCH.ipk --force-reinstall || true
                 fi
                 wget -O luci-app-v2ray_${luci_app_xray_ver}_all.ipk $FFMPEG_MIRROR_LINK/luci-app-v2ray_${luci_app_xray_ver}_all.ipk
                 opkg install luci-app-v2ray_${luci_app_xray_ver}_all.ipk --force-reinstall || true
@@ -47343,6 +47399,12 @@ config interface 'lan'
             echo
             switch_options=( '开启' '关闭' )
             inquirer list_input_index "选择操作" switch_options switch_options_index
+            if [ -f /opt/AdGuardHome/AdGuardHome.yaml ] 
+            then
+                /opt/AdGuardHome/AdGuardHome -s stop || true
+                sed -i "s/aaaa_disabled: false/aaaa_disabled: true/" /opt/AdGuardHome/AdGuardHome.yaml
+                /opt/AdGuardHome/AdGuardHome -s start || true
+            fi
             if [ "$switch_options_index" -eq 0 ] 
             then
                 sed -i "0,/.*block_ipv6 = .*/s//block_ipv6 = false/" $DNSCRYPT_ROOT/dnscrypt-proxy.toml
@@ -47359,7 +47421,7 @@ config interface 'lan'
             then
                 Println "$tip 请确保已经修改了合适的 apt 源"
                 ExitOnList n "`gettext \"是否继续\"`"
-                apt-get update
+                AptUpdate
                 apt-get -y install python python-pip python-setuptools python-wheel
                 pip install pystun
             fi
@@ -47597,7 +47659,7 @@ then
             if [[ ! -x $(command -v sensors) ]] 
             then
                 Println "$info 安装 lm-sensors..."
-                apt-get update
+                AptUpdate
                 apt-get -y install lm-sensors
             fi
 
@@ -47615,7 +47677,7 @@ then
                 Println "$tip 此选项主要用于笔记本"
                 ExitOnList n "`gettext \"需要安装 mono, 耗时会很长, 是否继续\"`"
 
-                apt-get update
+                AptUpdate
                 apt-get -y install apt-transport-https dirmngr gnupg ca-certificates
                 apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
                 echo "deb https://download.mono-project.com/repo/debian stable main" | tee /etc/apt/sources.list.d/mono-official-stable.list
@@ -47731,10 +47793,7 @@ then
                 dnscrypt_version_old=${DNSCRYPT_ROOT#*-}
 
                 echo
-                ExitOnText "输入本机静态 ip : " proxmox_ip
-
-                echo
-                inquirer text_input "输入监听端口 : " listen_port 53
+                inquirer text_input "输入监听端口 : " listen_port $(sed -n -e "s/^listen_addresses = .*:\([0-9]*\)']/\1/p" $DNSCRYPT_ROOT/dnscrypt-proxy.toml)
 
                 if [[ $dnscrypt_version_old == "*" ]]
                 then
@@ -47751,7 +47810,7 @@ then
                         cp -f example-dnscrypt-proxy.toml dnscrypt-proxy.toml
 
                         sed -i "0,/.*server_names = \[.*/s//server_names = ['alidns-doh']/" dnscrypt-proxy.toml
-                        sed -i "0,/.*listen_addresses = \['127.0.0.1:53']/s//listen_addresses = ['127.0.0.1:$listen_port', '$proxmox_ip:$listen_port', '[::1]:$listen_port']/" dnscrypt-proxy.toml
+                        sed -i "0,/^listen_addresses = .*/s//listen_addresses = ['[::]:$listen_port']/" dnscrypt-proxy.toml
                         sed -i "0,/.*require_dnssec = .*/s//require_dnssec = true/" dnscrypt-proxy.toml
                         sed -i "0,/.*bootstrap_resolvers =.*/s//bootstrap_resolvers = ['114.114.114.114:53', '8.8.8.8:53']/" dnscrypt-proxy.toml
                         sed -i "0,/.*netprobe_address =.*/s//netprobe_address = '114.114.114.114:53'/" dnscrypt-proxy.toml
@@ -47813,7 +47872,7 @@ then
                         cd dnscrypt-$dnscrypt_version
                         cp -f example-dnscrypt-proxy.toml dnscrypt-proxy.toml
                         sed -i "0,/.*server_names = \[.*/s//server_names = ['alidns-doh']/" dnscrypt-proxy.toml
-                        sed -i "0,/.*listen_addresses = \['127.0.0.1:53']/s//listen_addresses = ['127.0.0.1:$listen_port', '$proxmox_ip:$listen_port', '[::1]:$listen_port']/" dnscrypt-proxy.toml
+                        sed -i "0,/^listen_addresses = .*/s//listen_addresses = ['[::]:$listen_port']/" dnscrypt-proxy.toml
                         sed -i "0,/.*require_dnssec = .*/s//require_dnssec = true/" dnscrypt-proxy.toml
                         sed -i "0,/.*bootstrap_resolvers =.*/s//bootstrap_resolvers = ['114.114.114.114:53', '8.8.8.8:53']/" dnscrypt-proxy.toml
                         sed -i "0,/.*netprobe_address =.*/s//netprobe_address = '114.114.114.114:53'/" dnscrypt-proxy.toml
@@ -47852,10 +47911,32 @@ then
                 exit 1
             fi
 
-            if curl -s -S -L $FFMPEG_MIRROR_LINK/AdGuardHome/master/scripts/install.sh | sh -s -- -v 
+            echo
+            ExitOnText "输入 dnscrypt-proxy 新的监听端口" listen_port
+
+            if [ "$listen_port" -eq 53 ] 
             then
-                Println "$info AdGuard Home 安装成功\n\n设置教程: https://github.com/woniuzfb/iptv/wiki/AdGuardHome\n"
+                Println "$error 端口不能是 53\n"
+                exit 1
             fi
+
+            if ! curl -s -S -L $FFMPEG_MIRROR_LINK/AdGuardHome/master/scripts/install.sh | sh -s -- -v 
+            then
+                Println "$error 安装发生错误\n"
+                exit 1
+            fi
+
+            sed -i "0,/^listen_addresses = .*/s//listen_addresses = ['[::]:$listen_port']/" "$DNSCRYPT_ROOT/dnscrypt-proxy.toml"
+            systemctl restart dnscrypt-proxy
+
+            if ! curl -s -X POST \
+                --data '{"upstream_dns": ["127.0.0.1:'"$listen_port"'"], "ratelimit": 0}' "http://localhost:3000/control/dns_config" 
+            then
+                Println "$error 请登陆 http://localhost:3000/ 手动修改上游 DNS 服务器为 127.0.0.1:$listen_port 并可以将速度限制设置为 0\n"
+                exit 1
+            fi
+
+            Println "$info AdGuard Home 安装成功\n"
         ;;
         8)
             PveListVMs
@@ -48148,6 +48229,12 @@ then
             echo
             switch_options=( '开启' '关闭' )
             inquirer list_input_index "选择操作" switch_options switch_options_index
+            if [ -f /opt/AdGuardHome/AdGuardHome.yaml ] 
+            then
+                /opt/AdGuardHome/AdGuardHome -s stop || true
+                sed -i "s/aaaa_disabled: false/aaaa_disabled: true/" /opt/AdGuardHome/AdGuardHome.yaml
+                /opt/AdGuardHome/AdGuardHome -s start || true
+            fi
             if [ "$switch_options_index" -eq 0 ] 
             then
                 sed -i "0,/.*block_ipv6 = .*/s//block_ipv6 = false/" $DNSCRYPT_ROOT/dnscrypt-proxy.toml
@@ -48617,7 +48704,6 @@ then
             echo
             ExitOnList n "请确保已经升级到最新脚本, 是否继续"
             ShFallback
-            DEFAULT_DEMOS="$SH_FALLBACK/$DEFAULT_DEMOS"
             channels=""
             while IFS= read -r line 
             do
@@ -48634,7 +48720,7 @@ then
                     line=${line//$pid/$rand_pid}
                 fi
                 channels="$channels$line"
-            done < <(curl -s -Lm 20 "$DEFAULT_DEMOS")
+            done < <(curl -s -Lm 20 "$SH_FALLBACK/$DEFAULT_DEMOS")
             [ -z "$channels" ] && Println "$error 暂时无法连接服务器, 请稍后再试 !\n" && exit 1
             delimiters=( $'\001' )
             IFS=$'\001' read -r -a channels_name < <(JQs flat "$channels" '' '.channel_name' "${delimiters[@]}")
@@ -48871,7 +48957,7 @@ then
                 else
                     xray_package_ver="$xray_ver"
                 fi
-                xray_archs=( 'x86_64' 'aarch64_generic' )
+                xray_archs=( 'x86_64' 'aarch64_generic' 'aarch64_cortex-a53' )
                 for arch in "${xray_archs[@]}"
                 do
                     if [ ! -e "$FFMPEG_MIRROR_ROOT/xray_${xray_package_ver}_$arch.ipk" ] 
